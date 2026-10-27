@@ -13,8 +13,14 @@ PostgreSQL отвечает за генерацию идентификаторо
 отдельными SQL-миграциями.
 """
 
+from django.conf import settings
 from django.db import models
 from django.db.models.expressions import RawSQL
+
+from messages.querysets import MessageManager
+
+from .common import PostgreSQLIndex
+
 
 
 class MessageEntity(models.Model):
@@ -25,7 +31,7 @@ class MessageEntity(models.Model):
     и состояний.
 
     Первичный ключ и временная метка создания генерируются PostgreSQL.
-    Автор сообщения определяется внешним ключом на identity.users.
+    Автор сообщения определяется стандартной моделью пользователя Django.
     Неизменяемость записи и инициализация начального состояния
     обеспечиваются триггерами PostgreSQL.
     """
@@ -45,10 +51,9 @@ class MessageEntity(models.Model):
     )
 
     user = models.ForeignKey(
-        "identity.User",
+        settings.AUTH_USER_MODEL,
         on_delete=models.DO_NOTHING,
         db_column="user_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="message_entities",
@@ -74,6 +79,8 @@ class MessageEntity(models.Model):
         verbose_name="Дата и время создания",
     )
 
+    objects = MessageManager()
+
     class Meta:
         managed = True
         db_table = '"messages"."entities"'
@@ -89,13 +96,13 @@ class MessageEntity(models.Model):
         indexes = [
 
             # Ускоряет фильтрацию сообщений по их автору.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["user"],
                 name="index_messages_entities_user_id",
             ),
 
             # Оптимизирует сортировку списков по времени создания.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["-created_at"],
                 name="index_messages_entities_created_at",
             ),

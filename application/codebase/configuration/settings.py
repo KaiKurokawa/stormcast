@@ -105,19 +105,9 @@ INSTALLED_APPS = [
     "drf_spectacular",
 
     # ---------------------------------------------------------------------
-    # Приложения проекта
+    # Приложение, доступное в тестовом срезе проекта
     # ---------------------------------------------------------------------
-    # Рассылка — агрегатор процесса отправки.
-    "dispatch",
-
-    # Сводка — текст метеорологического сообщения.
-    "bulletin",
-
-    # Бланк — реквизиты и получатели.
-    "distribution",
-
-    # Почта — факты доставки.
-    "delivery",
+    "messages.apps.MessagesConfig",
 ]
 
 
@@ -319,17 +309,16 @@ if DEBUG:
 SPECTACULAR_SETTINGS = {
     "TITLE": f"{APPLICATION_NAME} API",
     "DESCRIPTION": (
-        "REST API системы метеорологических рассылок.\n\n"
-        "Рассылка (Dispatch) объединяет сводку (Bulletin), "
-        "бланки получателей (DistributionForm) и отметки о доставке "
-        "(DeliveryRecord)."
+        "REST API приложения сообщений. Данные содержат реестр сообщений, "
+        "рабочие буферы, неизменяемые ревизии и историю состояний."
     ),
     "VERSION": API_VERSION,
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": f"/api/{API_VERSION}",
     "ENUM_NAME_OVERRIDES": {
-        "DispatchStatusEnum": "dispatch.models.Dispatch.Status",
+        "MessageTypeEnum": "messages.models.MessageType",
+        "ReadinessStageEnum": "messages.models.ReadinessStage",
     },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,

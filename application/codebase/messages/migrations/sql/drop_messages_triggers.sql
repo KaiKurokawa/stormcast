@@ -1,0 +1,10 @@
+DROP TRIGGER IF EXISTS trigger_messages_states_immutability ON messages.states;
+DROP TRIGGER IF EXISTS trigger_messages_states_cache_sync ON messages.states;
+DROP TRIGGER IF EXISTS trigger_messages_states_revision_entity_consistency ON messages.states;
+DROP TRIGGER IF EXISTS trigger_messages_state_cache_revision_entity_consistency ON messages.state_cache;
+DROP TRIGGER IF EXISTS trigger_messages_state_cache_updated_at ON messages.state_cache;
+DROP TRIGGER IF EXISTS trigger_messages_revisions_immutability ON messages.revisions;
+DROP TRIGGER IF EXISTS trigger_messages_revision_buffer_updated_at ON messages.revision_buffer;
+DROP TRIGGER IF EXISTS trigger_messages_revision_buffer_identity ON messages.revision_buffer;
+DROP TRIGGER IF EXISTS trigger_messages_entities_immutability ON messages.entities;
+DROP TRIGGER IF EXISTS trigger_messages_entities_state_initialization ON messages.entities;

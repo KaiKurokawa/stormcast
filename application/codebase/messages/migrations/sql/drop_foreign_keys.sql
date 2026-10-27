@@ -1,0 +1,12 @@
+ALTER TABLE messages.states
+    DROP CONSTRAINT states_revision_id_fkey,
+    DROP CONSTRAINT states_entity_id_fkey;
+ALTER TABLE messages.state_cache
+    DROP CONSTRAINT state_cache_revision_id_fkey,
+    DROP CONSTRAINT state_cache_entity_id_fkey;
+ALTER TABLE messages.revisions
+    DROP CONSTRAINT revisions_parent_id_fkey,
+    DROP CONSTRAINT revisions_entity_id_fkey;
+ALTER TABLE messages.revision_buffer
+    DROP CONSTRAINT revision_buffer_parent_id_fkey,
+    DROP CONSTRAINT revision_buffer_entity_id_fkey;

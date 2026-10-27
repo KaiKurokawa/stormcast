@@ -14,18 +14,22 @@ Django описывает поля, связи, ограничения, инде
 отдельными SQL-миграциями.
 """
 
+from django.conf import settings
 from django.db import models
 from django.db.models.expressions import RawSQL
 
 from messages.fields import PostgreSQLEnumField
 
 from .common import (
+    ContentHashModel,
+    PostgreSQLIndex,
     ReadinessStage,
     content_hash_length_constraint,
 )
+from messages.hashing import state_content_hash
 
 
-class State(models.Model):
+class State(ContentHashModel):
     """
     Запись истории состояния сообщения.
 
@@ -58,7 +62,7 @@ class State(models.Model):
     )
 
     entity = models.ForeignKey(
-        "messages.MessageEntity",
+        "stormcast_messages.MessageEntity",
         on_delete=models.CASCADE,
         db_column="entity_id",
         db_constraint=False,
@@ -71,7 +75,7 @@ class State(models.Model):
     )
 
     revision = models.ForeignKey(
-        "messages.Revision",
+        "stormcast_messages.Revision",
         on_delete=models.RESTRICT,
         db_column="revision_id",
         db_constraint=False,
@@ -89,10 +93,9 @@ class State(models.Model):
     )
 
     user = models.ForeignKey(
-        "identity.User",
+        settings.AUTH_USER_MODEL,
         on_delete=models.DO_NOTHING,
         db_column="user_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="message_states",
@@ -226,23 +229,32 @@ class State(models.Model):
         indexes = [
 
             # Оптимизирует построение истории состояний сообщения.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["entity", "created_at"],
                 name="index_messages_states_chronology",
             ),
 
             # Оптимизирует построение общего журнала изменений состояний.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["-created_at"],
                 name="index_messages_states_created_at",
             ),
 
             # Ускоряет поиск состояний, связанных с конкретной ревизией сообщения.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["revision"],
                 name="index_messages_states_revision_id",
             ),
         ]
+
+    def calculate_content_hash(self):
+        return state_content_hash(
+            readiness_stage=self.readiness_stage,
+            is_starred=self.is_starred,
+            is_archived=self.is_archived,
+            is_deleted=self.is_deleted,
+            details=self.details,
+        )
 
     def __str__(self) -> str:
         """

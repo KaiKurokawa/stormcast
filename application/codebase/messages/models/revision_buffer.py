@@ -19,21 +19,25 @@ Django описывает поля, связи, ограничения, инде
 """
 
 from django.contrib.postgres.fields import DateTimeRangeField
-from django.contrib.postgres.indexes import GinIndex
+from django.conf import settings
 from django.db import models
 from django.db.models.expressions import RawSQL
 
 from messages.fields import PostgreSQLEnumField
 
 from .common import (
+    ContentHashModel,
     UniqueConstraint,
     MessageType,
+    PostgreSQLGinIndex,
+    PostgreSQLIndex,
     content_hash_length_constraint,
     parent_not_self_constraint,
 )
+from messages.hashing import revision_content_hash
 
 
-class RevisionBuffer(models.Model):
+class RevisionBuffer(ContentHashModel):
     """
     Буфер несохраненных изменений сообщения.
 
@@ -71,7 +75,7 @@ class RevisionBuffer(models.Model):
     )
 
     entity = models.ForeignKey(
-        "messages.MessageEntity",
+        "stormcast_messages.MessageEntity",
         on_delete=models.CASCADE,
         db_column="entity_id",
         db_constraint=False,
@@ -84,7 +88,7 @@ class RevisionBuffer(models.Model):
     )
 
     parent = models.ForeignKey(
-        "messages.MessageEntity",
+        "stormcast_messages.MessageEntity",
         on_delete=models.SET_NULL,
         db_column="parent_id",
         db_constraint=False,
@@ -102,10 +106,9 @@ class RevisionBuffer(models.Model):
     )
 
     user = models.ForeignKey(
-        "identity.User",
+        settings.AUTH_USER_MODEL,
         on_delete=models.DO_NOTHING,
         db_column="user_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="message_revision_buffers",
@@ -259,37 +262,47 @@ class RevisionBuffer(models.Model):
         indexes = [
 
             # Ускоряет поиск связанных сообщений (исправлений, отмен).
-            models.Index(
+            PostgreSQLIndex(
                 fields=["parent"],
                 name="index_messages_revision_buffer_parent",
             ),
 
             # Ускоряет поиск активных черновиков пользователя.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["user"],
                 name="index_messages_revision_buffer_user_id",
             ),
 
             # Ускоряет поиск по тексту черновиков.
-            GinIndex(
+            PostgreSQLGinIndex(
                 fields=["text"],
                 name="index_messages_revision_buffer_text_trigram",
                 opclasses=["gin_trgm_ops"],
             ),
 
             # Ускоряет поиск по параметрам черновиков в JSONB.
-            GinIndex(
+            PostgreSQLGinIndex(
                 fields=["details"],
                 name="index_messages_revision_buffer_details",
                 opclasses=["jsonb_path_ops"],
             ),
 
             # Оптимизирует сортировку черновиков по времени изменения.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["-updated_at"],
                 name="index_messages_revision_buffer_updated_at",
             ),
         ]
+
+    def calculate_content_hash(self):
+        return revision_content_hash(
+            message_type=self.type,
+            period=self.period,
+            region=self.region,
+            text=self.text,
+            note=self.note,
+            details=self.details,
+        )
 
     def __str__(self) -> str:
         """

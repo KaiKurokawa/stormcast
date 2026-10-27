@@ -108,7 +108,7 @@
 
             new_record_jsonb            jsonb := to_jsonb(NEW);
             entity_identifier_uuid      uuid  := (new_record_jsonb ->> 'id')::uuid;
-            user_identifier_uuid        uuid  := (new_record_jsonb ->> 'user_id')::uuid;
+            user_identifier_text        text  := new_record_jsonb ->> 'user_id';
 
             column_names                text := '';
             column_values               text := '';
@@ -148,14 +148,15 @@
             END LOOP;
 
             sql_statement := format(
-                'INSERT INTO %s (%I, user_id, %s, details) VALUES ($1, $2, %s, $3)',
+                'INSERT INTO %s (%I, user_id, %s, details) VALUES ($1, %L, %s, $2)',
                 target_log_table_name,
                 foreign_key_column_name,
                 column_names,
+                user_identifier_text,
                 column_values
             );
 
-            EXECUTE sql_statement USING entity_identifier_uuid, user_identifier_uuid, '{}'::jsonb;
+            EXECUTE sql_statement USING entity_identifier_uuid, '{}'::jsonb;
 
             RETURN NEW;
 
@@ -178,7 +179,7 @@
 
             new_log_record_jsonb        jsonb := to_jsonb(NEW);
             entity_identifier_uuid      uuid  := (new_log_record_jsonb ->> foreign_key_column_name)::uuid;
-            user_identifier_uuid        uuid  := (new_log_record_jsonb ->> 'user_id')::uuid;
+            user_identifier_text        text  := new_log_record_jsonb ->> 'user_id';
             details_jsonb               jsonb := COALESCE(new_log_record_jsonb -> 'details', '{}'::jsonb);
 
             insert_columns              text := '';
@@ -224,18 +225,19 @@
 
             sql_statement := format(
                 'INSERT INTO %s (%I, user_id, %s, details, updated_at) ' ||
-                'VALUES ($1, $2, %s, $3, CURRENT_TIMESTAMP) ' ||
+                'VALUES ($1, %L, %s, $2, CURRENT_TIMESTAMP) ' ||
                 'ON CONFLICT (%I) DO UPDATE SET ' ||
                 'user_id = EXCLUDED.user_id, %s, details = EXCLUDED.details, updated_at = CURRENT_TIMESTAMP',
                 target_cache_table_name,
                 foreign_key_column_name,
                 insert_columns,
+                user_identifier_text,
                 insert_values,
                 foreign_key_column_name,
                 update_set
             );
 
-            EXECUTE sql_statement USING entity_identifier_uuid, user_identifier_uuid, details_jsonb;
+            EXECUTE sql_statement USING entity_identifier_uuid, details_jsonb;
 
             RETURN NEW;
 
@@ -304,6 +306,7 @@
         DECLARE
             v_revision_table_name TEXT := TG_ARGV[0];
             v_revision_entity_id  UUID;
+            v_revision_row_count  BIGINT;
 
         BEGIN
             IF v_revision_table_name IS NULL OR v_revision_table_name = '' THEN
@@ -320,8 +323,9 @@
             )
             INTO v_revision_entity_id
             USING NEW.revision_id;
+            GET DIAGNOSTICS v_revision_row_count = ROW_COUNT;
 
-            IF NOT FOUND THEN
+            IF v_revision_row_count = 0 THEN
                 RAISE EXCEPTION 'Ревизия % не найдена.', NEW.revision_id;
             END IF;
 

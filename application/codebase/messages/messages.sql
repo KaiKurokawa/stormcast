@@ -53,7 +53,7 @@
 
         CREATE OR REPLACE FUNCTION messages.function_commit_revision_from_buffer(
             p_entity_id             UUID,
-            p_user_id               UUID,
+            p_user_id               INTEGER,
             p_state_content_hash    BYTEA,
             p_state_details         JSONB       DEFAULT '{}'::jsonb,
             p_is_starred            BOOLEAN     DEFAULT NULL,
@@ -212,7 +212,7 @@
         END;
         $$;
 
-        COMMENT ON FUNCTION messages.function_commit_revision_from_buffer(UUID, UUID, BYTEA, JSONB, BOOLEAN, BOOLEAN, BOOLEAN) IS 'Переносит содержимое рабочего буфера пользователя в архив ревизий сообщения, не создаёт повтор текущего снимка по хэшу, создаёт начальное состояние новой ревизии, сохраняет или явно устанавливает флаги is_starred, is_archived и is_deleted, удаляет зафиксированный буфер и возвращает идентификатор ревизии.';
+        COMMENT ON FUNCTION messages.function_commit_revision_from_buffer(UUID, INTEGER, BYTEA, JSONB, BOOLEAN, BOOLEAN, BOOLEAN) IS 'Переносит содержимое рабочего буфера пользователя в архив ревизий сообщения, не создаёт повтор текущего снимка по хэшу, создаёт начальное состояние новой ревизии, сохраняет или явно устанавливает флаги is_starred, is_archived и is_deleted, удаляет зафиксированный буфер и возвращает идентификатор ревизии.';
 
 
     -- Создание или обновление рабочего буфера пользователя @
@@ -223,7 +223,7 @@
 
         CREATE OR REPLACE FUNCTION messages.function_upsert_revision_buffer(
             p_entity_id       UUID,
-            p_user_id         UUID,
+            p_user_id         INTEGER,
             p_parent_id       UUID,
             p_type            messages.message_type,
             p_period          TSTZRANGE,
@@ -280,7 +280,7 @@
         END;
         $$;
 
-        COMMENT ON FUNCTION messages.function_upsert_revision_buffer(UUID, UUID, UUID, messages.message_type, TSTZRANGE, TEXT, TEXT, VARCHAR, BYTEA, JSONB) IS 'Создаёт или обновляет личный рабочий буфер пользователя и возвращает технический идентификатор записи буфера.';
+        COMMENT ON FUNCTION messages.function_upsert_revision_buffer(UUID, UUID, INTEGER, messages.message_type, TSTZRANGE, TEXT, TEXT, VARCHAR, BYTEA, JSONB) IS 'Создаёт или обновляет личный рабочий буфер пользователя и возвращает технический идентификатор записи буфера.';
 
 
     -- Получение компактного списка сообщений (Feed) для интерфейса приложения @
@@ -291,7 +291,7 @@
         -- Предназначена для индексной страницы со списком сообщений.
 
         CREATE OR REPLACE FUNCTION messages.function_get_user_message_feed(
-            p_user_id   UUID,
+            p_user_id   INTEGER,
             p_msg_type  messages.message_type       DEFAULT NULL,
             p_state     messages.readiness_stages   DEFAULT NULL,
             p_search    TEXT                        DEFAULT NULL
@@ -340,8 +340,7 @@
                     NULLIF(
                         CONCAT_WS(' ',
                             author_users.last_name,
-                            author_users.first_name,
-                            author_users.middle_name
+                            author_users.first_name
                         ),
                         ''
                     ),
@@ -378,7 +377,7 @@
                 ON state_cache.entity_id = entities.id
 
             -- Данные автора актуального содержимого
-            LEFT JOIN identity.users AS author_users
+            LEFT JOIN public.auth_user AS author_users
                 ON author_users.id = COALESCE(
                     revision_buffer.user_id,
                     latest_revision.user_id,
@@ -412,14 +411,14 @@
         END;
         $$;
 
-        COMMENT ON FUNCTION messages.function_get_user_message_feed(UUID, messages.message_type, messages.readiness_stages, TEXT) IS 'Возвращает компактный список сообщений для конкретного пользователя с приоритетом его личного буфера и строгой изоляцией от буферов других пользователей.';
+        COMMENT ON FUNCTION messages.function_get_user_message_feed(INTEGER, messages.message_type, messages.readiness_stages, TEXT) IS 'Возвращает компактный список сообщений для конкретного пользователя с приоритетом его личного буфера и строгой изоляцией от буферов других пользователей.';
 
 
     -- Получение полной обогащённой карточки сообщения (Detail)
 
         CREATE OR REPLACE FUNCTION messages.function_get_user_message_detail(
             p_entity_id UUID,
-            p_user_id   UUID
+            p_user_id   INTEGER
         )
         RETURNS TABLE (
             entity_id               UUID,
@@ -480,8 +479,7 @@
                     NULLIF(
                         CONCAT_WS(' ',
                             author_users.last_name,
-                            author_users.first_name,
-                            author_users.middle_name
+                            author_users.first_name
                         ),
                         ''
                     ),
@@ -524,7 +522,7 @@
                 ON state_cache.entity_id = entities.id
 
             -- Данные автора изменений
-            LEFT JOIN identity.users AS author_users
+            LEFT JOIN public.auth_user AS author_users
                 ON author_users.id = COALESCE(
                     revision_buffer.user_id,
                     latest_revision.user_id,
@@ -536,7 +534,7 @@
         END;
         $$;
 
-        COMMENT ON FUNCTION messages.function_get_user_message_detail(UUID, UUID) IS 'Возвращает детальную карточку сообщения для пользователя с полным набором метаданных, приоритизируя личный буфер черновика.';
+        COMMENT ON FUNCTION messages.function_get_user_message_detail(UUID, INTEGER) IS 'Возвращает детальную карточку сообщения для пользователя с полным набором метаданных, приоритизируя личный буфер черновика.';
 
 
 -- Процедуры #
@@ -556,7 +554,7 @@
 
                     id                      UUID                        PRIMARY KEY                                 DEFAULT uuid_generate_v7(),
 
-                    user_id                 UUID                        REFERENCES identity.users(id)
+                    user_id                 INTEGER                     REFERENCES public.auth_user(id)
                                                                         NOT NULL,
 
 
@@ -635,8 +633,8 @@
                     parent_id               UUID                        REFERENCES messages.entities(id)
                                                                         ON DELETE SET NULL,
 
-                    user_id                 UUID                        NOT NULL
-                                                                        REFERENCES identity.users(id),
+                    user_id                 INTEGER                     NOT NULL
+                                                                        REFERENCES public.auth_user(id),
 
 
                 -- Основное содержимое #
@@ -770,8 +768,8 @@
                     parent_id               UUID                        REFERENCES messages.entities(id)
                                                                         ON DELETE SET NULL,
 
-                    user_id                 UUID                        NOT NULL
-                                                                        REFERENCES identity.users(id),
+                    user_id                 INTEGER                     NOT NULL
+                                                                        REFERENCES public.auth_user(id),
 
 
                 -- Основное содержимое #
@@ -891,7 +889,7 @@
                     revision_id             UUID                        REFERENCES messages.revisions(id)
                                                                         ON DELETE RESTRICT,
 
-                    user_id                 UUID                        REFERENCES identity.users(id)
+                    user_id                 INTEGER                     REFERENCES public.auth_user(id)
                                                                         NOT NULL,
 
 
@@ -1022,8 +1020,8 @@
                     revision_id             UUID                        REFERENCES messages.revisions(id)
                                                                         ON DELETE RESTRICT,
 
-                    user_id                 UUID                        NOT NULL
-                                                                        REFERENCES identity.users(id),
+                    user_id                 INTEGER                     NOT NULL
+                                                                        REFERENCES public.auth_user(id),
 
 
                 -- Основное содержимое #

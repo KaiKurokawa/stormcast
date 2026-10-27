@@ -2,6 +2,7 @@
 Общие перечисления и вспомогательные элементы для моделей сообщений.
 """
 
+from django.contrib.postgres.indexes import GinIndex, GistIndex
 from django.db import models
 from django.db.models import F, Func, IntegerField, Value
 from django.db.models.lookups import Exact
@@ -59,6 +60,37 @@ class UniqueConstraint(models.UniqueConstraint):
     """
 
     max_name_length = POSTGRES_MAX_IDENTIFIER_LENGTH
+
+
+class PostgreSQLIndexNameLengthMixin:
+    max_name_length = POSTGRES_MAX_IDENTIFIER_LENGTH
+
+
+class PostgreSQLIndex(PostgreSQLIndexNameLengthMixin, models.Index):
+    pass
+
+
+class PostgreSQLGinIndex(PostgreSQLIndexNameLengthMixin, GinIndex):
+    pass
+
+
+class PostgreSQLGistIndex(PostgreSQLIndexNameLengthMixin, GistIndex):
+    pass
+
+
+class ContentHashModel(models.Model):
+    class Meta:
+        abstract = True
+
+    def calculate_content_hash(self):
+        raise NotImplementedError
+
+    def save(self, *args, **kwargs):
+        self.content_hash = self.calculate_content_hash()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            kwargs["update_fields"] = set(update_fields) | {"content_hash"}
+        return super().save(*args, **kwargs)
 
 
 def content_hash_length_constraint(

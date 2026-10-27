@@ -14,13 +14,15 @@ PostgreSQL отвечает за генерацию временных мето�
 отдельной SQL-миграцией.
 """
 
-from django.contrib.postgres.indexes import GinIndex
+from django.conf import settings
 from django.db import models
 from django.db.models.expressions import RawSQL
 
 from messages.fields import PostgreSQLEnumField
 
 from .common import (
+    PostgreSQLGinIndex,
+    PostgreSQLIndex,
     ReadinessStage,
     content_hash_length_constraint,
 )
@@ -35,7 +37,7 @@ class StateCache(models.Model):
     """
 
     entity = models.OneToOneField(
-        "messages.MessageEntity",
+        "stormcast_messages.MessageEntity",
         primary_key=True,
         on_delete=models.CASCADE,
         db_column="entity_id",
@@ -49,7 +51,7 @@ class StateCache(models.Model):
     )
 
     revision = models.ForeignKey(
-        "messages.Revision",
+        "stormcast_messages.Revision",
         on_delete=models.RESTRICT,
         db_column="revision_id",
         db_constraint=False,
@@ -67,10 +69,9 @@ class StateCache(models.Model):
     )
 
     user = models.ForeignKey(
-        "identity.User",
+        settings.AUTH_USER_MODEL,
         on_delete=models.DO_NOTHING,
         db_column="user_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="message_state_caches",
@@ -206,21 +207,21 @@ class StateCache(models.Model):
         indexes = [
 
             # Ускоряет выборку неудаленных сообщений по стадии готовности.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["entity", "readiness_stage"],
                 condition=models.Q(is_deleted=False),
                 name="index_messages_state_cache_entity_stage_active",
             ),
 
             # Ускоряет выборку неархивированных сообщений по стадии готовности.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["readiness_stage"],
                 condition=models.Q(is_archived=False),
                 name="index_messages_state_cache_stage_not_archived",
             ),
 
             # Оптимизирует выборку неудаленных черновиков.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["readiness_stage"],
 
                 condition=models.Q(
@@ -232,7 +233,7 @@ class StateCache(models.Model):
             ),
 
             # Ускоряет выборку неудаленных важных сообщений.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["entity"],
 
                 condition=models.Q(
@@ -244,14 +245,14 @@ class StateCache(models.Model):
             ),
 
             # Ускоряет поиск по структурированным данным в JSONB.
-            GinIndex(
+            PostgreSQLGinIndex(
                 fields=["details"],
                 name="index_messages_state_cache_details",
                 opclasses=["jsonb_path_ops"],
             ),
 
             # Оптимизирует выборку сообщений по времени изменения состояния.
-            models.Index(
+            PostgreSQLIndex(
                 fields=["-updated_at"],
                 name="index_messages_state_cache_updated_at",
             ),
