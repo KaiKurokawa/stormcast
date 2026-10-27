@@ -1,0 +1,115 @@
+"""
+Общие перечисления и вспомогательные элементы для моделей сообщений.
+"""
+
+from django.db import models
+from django.db.models import F, Func, IntegerField, Value
+from django.db.models.lookups import Exact
+
+
+CONTENT_HASH_LENGTH = 32
+
+# Максимальная длина идентификатора в PostgreSQL обычно составляет 63 байта.
+POSTGRES_MAX_IDENTIFIER_LENGTH = 63
+
+
+class ReadinessStage(models.TextChoices):
+    """
+    Стадии готовности сообщения.
+
+    Соответствует нативному перечислению PostgreSQL:
+    messages.readiness_stages.
+    """
+
+    DRAFT = "draft", "Черновик"
+    REVIEW = "review", "На проверке"
+    APPROVED = "approved", "Утверждено"
+
+
+class MessageType(models.TextChoices):
+    """
+    Типы метеорологических событий.
+
+    Соответствует нативному перечислению PostgreSQL:
+    messages.message_type.
+    """
+
+    FORECAST = "forecast", "Прогноз"
+    OBSERVATION = "observation", "Наблюдение"
+    WARNING = "warning", "Предупреждение"
+
+
+class CheckConstraint(models.CheckConstraint):
+    """
+    CHECK-ограничение с поддержкой длинных имён.
+
+    Используется для сохранения полных осмысленных имён ограничений,
+    соответствующих эталонной схеме PostgreSQL.
+    """
+
+    max_name_length = POSTGRES_MAX_IDENTIFIER_LENGTH
+
+
+class UniqueConstraint(models.UniqueConstraint):
+    """
+    UNIQUE-ограничение с поддержкой длинных имён.
+
+    Используется для сохранения полных осмысленных имён ограничений,
+    соответствующих эталонной схеме PostgreSQL.
+    """
+
+    max_name_length = POSTGRES_MAX_IDENTIFIER_LENGTH
+
+
+def content_hash_length_constraint(
+    *,
+    name: str,
+    violation_error_message: str,
+) -> CheckConstraint:
+    """
+    Возвращает CHECK-ограничение на длину контент-хэша.
+
+    Контент-хэш ожидается как 32 байта, что соответствует
+    необработанному результату BLAKE3.
+    """
+
+    return CheckConstraint(
+        condition=Exact(
+            Func(
+                F("content_hash"),
+                function="length",
+                output_field=IntegerField(),
+            ),
+
+            Value(CONTENT_HASH_LENGTH),
+        ),
+
+        name=name,
+        violation_error_message=violation_error_message,
+    )
+
+
+def parent_not_self_constraint(
+    *,
+    name: str,
+    violation_error_message: str,
+) -> CheckConstraint:
+    """
+    Возвращает CHECK-ограничение против ссылки на самого себя.
+
+    Поведение эквивалентно проверке:
+
+        parent_id IS DISTINCT FROM entity_id
+
+    При этом NULL в parent_id считается допустимым значением.
+    """
+
+    return CheckConstraint(
+        condition=(
+            models.Q(parent__isnull=True)
+            | ~models.Q(parent=F("entity"))
+        ),
+
+        name=name,
+        violation_error_message=violation_error_message,
+    )

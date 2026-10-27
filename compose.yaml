@@ -1,0 +1,417 @@
+services:
+
+  # -----------------------------------------------------------------------
+  # Приложение (Python Django)
+  # -----------------------------------------------------------------------
+
+  application:
+    image: stormcast/application:2.5
+
+    build:
+      context: ./application
+      dockerfile: Dockerfile
+
+      network: host
+
+    depends_on:
+
+      database:
+        condition: service_healthy
+
+      # event-bus:
+      #   condition: service_healthy
+
+      # object-storage:
+      #   condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+      DATABASE_INTERFACE_HOST: database
+
+    command: >
+      python
+      manage.py
+      runserver 0.0.0.0:${APPLICATION_DASHBOARD_CONTAINER_PORT}
+
+    # volumes:
+    #   - ./application/codebase:/application
+
+    ports:
+      - "${APPLICATION_DASHBOARD_HOST_PORT}:${APPLICATION_DASHBOARD_CONTAINER_PORT}"
+      - "${APPLICATION_INTERFACE_HOST_PORT}:${APPLICATION_INTERFACE_CONTAINER_PORT}"
+
+    networks:
+      - internal
+      - proxy
+
+    restart: unless-stopped
+
+    healthcheck:
+
+      test: [
+        "CMD", "python", "-c",
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${APPLICATION_DASHBOARD_CONTAINER_PORT}/api/v1/health/', timeout=5)"
+      ]
+
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    labels:
+
+      # Общие настройки маршрутизации
+      - "traefik.enable=true"
+
+      # Маршрут панели управления
+      - "traefik.http.routers.stormcast.rule=Host(`${APPLICATION_DASHBOARD_DOMAIN}`)"
+      - "traefik.http.routers.stormcast.entrypoints=web"
+      - "traefik.http.routers.stormcast.service=stormcast"
+
+      # Маршрут программного интерфейса
+      - "traefik.http.routers.interface.stormcast.rule=Host(`${APPLICATION_INTERFACE_DOMAIN}`)"
+      - "traefik.http.routers.interface.stormcast.entrypoints=web"
+      - "traefik.http.routers.interface.stormcast.service=interface.stormcast"
+
+      # Сервис панели управления
+      - "traefik.http.services.stormcast.loadbalancer.server.port=${APPLICATION_DASHBOARD_CONTAINER_PORT}"
+
+      # Сервис программного интерфейса
+      - "traefik.http.services.interface.stormcast.loadbalancer.server.port=${APPLICATION_INTERFACE_CONTAINER_PORT}"
+
+
+  # -----------------------------------------------------------------------
+  # База данных (PostgreSQL)
+  # -----------------------------------------------------------------------
+
+  database:
+    image: database/postgres:17-alpine
+
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+
+      network: host
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+      POSTGRES_DB: ${DATABASE_DEFAULT_NAME}
+      POSTGRES_USER: ${DATABASE_DEFAULT_USER}
+      POSTGRES_PASSWORD: ${DATABASE_DEFAULT_PASSWORD}
+
+    volumes:
+
+      # Изменяемые данные
+      # - ./database/data/runtime:/var/lib/postgresql/data  # Хранение данных в директории хоста (bind mount)
+      - database-runtime:/var/lib/postgresql/data           # Хранение данных в именованном томе Docker (volume)
+
+      # Файлы первоначальной инициализации
+      # Скрипты и SQL-файлы в этом каталоге выполняются автоматически
+      # при первом запуске контейнера.
+      - ./database/data/bootstrap:/docker-entrypoint-initdb.d
+
+    networks:
+
+      # Внутренняя сеть проекта
+      # База данных доступна только для контейнеров внутри этой сети.
+      # Внешний доступ возможен только через проброшенные порты ниже.
+      - internal
+
+    ports:
+
+      # Порт базы данных для внешнего доступа
+      #
+      # Подключение выполняется по IP-адресу сервера и опубликованному порту.
+      # Такой способ не требует настройки дополнительной TCP-маршрутизации
+      # и обычно проще в эксплуатации, чем использование доменных имён
+      # для PostgreSQL.
+      #
+      # Если порт должен быть доступен только на сервере:
+      # - "127.0.0.1:${DATABASE_INTERFACE_HOST_PORT}:${DATABASE_INTERFACE_CONTAINER_PORT}"
+      #
+      # Для доступа из локальной сети:
+      - "${DATABASE_INTERFACE_HOST_PORT}:${DATABASE_INTERFACE_CONTAINER_PORT}"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_DEFAULT_USER} -d ${DATABASE_DEFAULT_NAME}"]
+
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
+  # -----------------------------------------------------------------------
+  # Менеджер базы данных (pgAdmin)
+  # -----------------------------------------------------------------------
+
+  database-manager:
+    image: dpage/pgadmin4:9.17
+
+    depends_on:
+
+      database:
+        condition: service_healthy
+
+    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
+    profiles:
+      - dev
+
+    environment:
+
+      # Часовой пояс
+      TZ: ${TIME_ZONE}
+
+      # Отключение многопользовательского режима
+      # Позволяет работать без создания отдельных учётных записей
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+
+      # Отключение требования мастер-пароля
+      # Интерфейс открывается без предварительного ввода пароля
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+
+      # Отключение усиленной защиты cookies
+      # Упрощает автоматический вход в закрытой сети
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: 'False'
+
+      # Учётные данные для входа в интерфейс
+      PGADMIN_DEFAULT_EMAIL: ${DATABASE_MANAGER_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${DATABASE_MANAGER_DEFAULT_PASSWORD}
+
+    volumes:
+
+      # Изменяемые данные
+      - ./database_manager/data/runtime:/var/lib/pgadmin
+
+      # Управляющие файлы (только чтение)
+      - ./database_manager/data/control/servers.json:/pgadmin4/servers.json:ro
+      - ./database_manager/data/control/pgpass:/pgadmin4/pgpass:ro
+
+    networks:
+      - internal
+
+    ports:
+      - "${DATABASE_MANAGER_DASHBOARD_HOST_PORT}:${DATABASE_MANAGER_DASHBOARD_CONTAINER_PORT}"
+
+    restart: unless-stopped
+
+    labels:
+
+      # Общие настройки маршрутизации
+      - "traefik.enable=true"
+
+      # Маршрут панели управления
+      - "traefik.http.routers.manager.database.stormcast.rule=Host(`${DATABASE_MANAGER_DASHBOARD_DOMAIN}`)"
+      - "traefik.http.routers.manager.database.stormcast.entrypoints=web"
+      - "traefik.http.routers.manager.database.stormcast.service=manager.database.stormcast"
+
+      # Сервис панели управления
+      - "traefik.http.services.manager.database.stormcast.loadbalancer.server.port=${DATABASE_MANAGER_DASHBOARD_CONTAINER_PORT}"
+
+
+  # -----------------------------------------------------------------------
+  # Служба автоматического резервного копирования базы данных (Python)
+  # -----------------------------------------------------------------------
+
+  database-archiver:
+    image: database_archiver/alpine:3.20
+
+    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
+    profiles:
+      - dev
+
+    build:
+      context: ./database_archiver
+      dockerfile: Dockerfile
+
+      network: host
+
+    depends_on:
+
+      database:
+        condition: service_healthy
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+      DATABASE_HOST: database
+      DATABASE_NAME: ${DATABASE_DEFAULT_NAME}
+      DATABASE_USER: ${DATABASE_DEFAULT_USER}
+      DATABASE_PASSWORD: ${DATABASE_DEFAULT_PASSWORD}
+
+      # Путь внутри контейнера для сохранения архивов
+      ARTIFACTS_PATH: /data/artifacts
+
+      # Расписание запуска в формате UNIX cron
+      CRON_SCHEDULE: "0 3 * * *"
+
+      # Срок хранения резервных копий в днях (устаревшие архивы удаляются автоматически)
+      RETENTION_PERIOD_DAYS: 30
+
+    volumes:
+      - ./database_archiver/data/artifacts:/data/artifacts
+
+    networks:
+      - internal
+
+    restart: unless-stopped
+
+
+  # -----------------------------------------------------------------------
+  # Шина событий (Redis Pub/Sub)
+  # -----------------------------------------------------------------------
+
+  event-bus:
+    image: redis:7.4-alpine
+
+    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
+    profiles:
+      - dev
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+    command: >
+      redis-server
+      --maxmemory-policy allkeys-lru
+
+    networks:
+      - internal
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+
+  # -----------------------------------------------------------------------
+  # Объектное хранилище (MinIO)
+  # -----------------------------------------------------------------------
+
+  object-storage:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+
+    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
+    profiles:
+      - dev
+
+    environment:
+      TZ: ${TIME_ZONE}
+
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_DEFAULT_USER}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_DEFAULT_PASSWORD}
+
+    command: >
+      server /data
+      --console-address ":${OBJECT_STORAGE_DASHBOARD_CONTAINER_PORT}"
+
+    volumes:
+      # - ./object_storage/data/runtime:/data  # Хранение данных в директории хоста (bind mount)
+      - object-storage-runtime:/data           # Хранение данных в именованном томе Docker (volume)
+
+    ports:
+      - "${OBJECT_STORAGE_DASHBOARD_HOST_PORT}:${OBJECT_STORAGE_DASHBOARD_CONTAINER_PORT}"
+      - "${OBJECT_STORAGE_INTERFACE_HOST_PORT}:${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}"
+
+    networks:
+      - internal
+
+    restart: unless-stopped
+
+    healthcheck:
+
+      test: [
+        "CMD",
+        "curl", "-f", "http://localhost:${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}/minio/health/live"
+      ]
+
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    labels:
+
+      # Общие настройки маршрутизации
+      - "traefik.enable=true"
+
+      # Маршрут панели управления
+      - "traefik.http.routers.storage.stormcast.rule=Host(`${OBJECT_STORAGE_DASHBOARD_DOMAIN}`)"
+      - "traefik.http.routers.storage.stormcast.entrypoints=web"
+      - "traefik.http.routers.storage.stormcast.service=storage.stormcast"
+
+      # Маршрут программного интерфейса
+      - "traefik.http.routers.interface.storage.stormcast.rule=Host(`${OBJECT_STORAGE_INTERFACE_DOMAIN}`)"
+      - "traefik.http.routers.interface.storage.stormcast.entrypoints=web"
+      - "traefik.http.routers.interface.storage.stormcast.service=interface.storage.stormcast"
+
+      # Сервис панели управления
+      - "traefik.http.services.storage.stormcast.loadbalancer.server.port=${OBJECT_STORAGE_DASHBOARD_CONTAINER_PORT}"
+
+      # Сервис программного интерфейса
+      - "traefik.http.services.interface.storage.stormcast.loadbalancer.server.port=${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}"
+
+
+  # -----------------------------------------------------------------------
+  # Почтовй сервер (Mailpit)
+  # -----------------------------------------------------------------------
+
+  mail-server:
+    image: axllent/mailpit:v1.21
+
+    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
+    profiles:
+      - dev
+
+    networks:
+      - internal
+
+    ports:
+
+      # Веб-интерфейс (по умолчанию: 8025)
+      - "${MAIL_SERVER_DASHBOARD_HOST_PORT}:${MAIL_SERVER_DASHBOARD_CONTAINER_PORT}"
+
+      # SMTP (по умолчанию: 1025)
+      - "${MAIL_SERVER_INTERFACE_HOST_PORT}:${MAIL_SERVER_INTERFACE_CONTAINER_PORT}"
+
+    restart: unless-stopped
+
+    labels:
+
+      # Общие настройки маршрутизации
+      - "traefik.enable=true"
+
+      # Маршрут панели управления
+      - "traefik.http.routers.mail.stormcast.rule=Host(`${MAIL_SERVER_DASHBOARD_DOMAIN}`)"
+      - "traefik.http.routers.mail.stormcast.entrypoints=web"
+      - "traefik.http.routers.mail.stormcast.service=mail.stormcast"
+
+      # Сервис панели управления
+      - "traefik.http.services.mail.stormcast.loadbalancer.server.port=${MAIL_SERVER_DASHBOARD_CONTAINER_PORT}"
+
+
+networks:
+
+  # Внутренняя сеть для связи между сервисами проекта
+  internal:
+    driver: bridge
+
+  # Внешняя сеть для маршрутизации через Traefik
+  proxy:
+    external: true
+
+
+volumes:
+
+  database-runtime:
+  object-storage-runtime:
