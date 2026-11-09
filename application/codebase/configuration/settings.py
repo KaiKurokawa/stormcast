@@ -37,17 +37,26 @@ API_VERSION = "v1"
 # Основные настройки
 # -------------------------------------------------------------------------
 
-SECRET_KEY = read_required_text("APPLICATION_SECRET_KEY")
+SECRET_KEY = read_required_text(
+    "APPLICATION__GENERAL__SECURITY__SECRET_KEY"
+)
 
-DEBUG = read_boolean_variable("APPLICATION_DEBUG_MODE", False)
+DEBUG = read_boolean_variable(
+    "APPLICATION__GENERAL__DEBUG__ENABLED",
+    False,
+)
 
 ALLOWED_HOSTS = read_list_variable(
-    "APPLICATION_ALLOWED_HOSTS",
+    "APPLICATION__GENERAL__SECURITY__ALLOWED_HOSTS",
     "localhost,127.0.0.1",
 )
 
-# Обязательный параметр Django 4+ для работы CSRF за reverse-proxy.
-CSRF_TRUSTED_ORIGINS = read_list_variable("APPLICATION_CSRF_TRUSTED_ORIGINS")
+# Доверенные источники для CSRF-проверки.
+# Значения должны содержать схему подключения: http:// или https://.
+CSRF_TRUSTED_ORIGINS = read_list_variable(
+    "APPLICATION__GENERAL__SECURITY__CSRF_TRUSTED_ORIGINS",
+    "",
+)
 
 
 # -------------------------------------------------------------------------
@@ -55,17 +64,17 @@ CSRF_TRUSTED_ORIGINS = read_list_variable("APPLICATION_CSRF_TRUSTED_ORIGINS")
 # -------------------------------------------------------------------------
 
 APPLICATION_FEATURE_ENABLE_API = read_boolean_variable(
-    "APPLICATION_FEATURE_ENABLE_API",
+    "APPLICATION__INTERFACE__ENABLED",
     True,
 )
 
 APPLICATION_FEATURE_USE_REDIS = read_boolean_variable(
-    "APPLICATION_FEATURE_USE_REDIS",
+    "APPLICATION__GENERAL__FEATURES__REDIS__ENABLED",
     False,
 )
 
 APPLICATION_FEATURE_ENABLE_REALTIME = read_boolean_variable(
-    "APPLICATION_FEATURE_ENABLE_REALTIME",
+    "APPLICATION__GENERAL__FEATURES__REALTIME__ENABLED",
     False,
 )
 
@@ -156,12 +165,30 @@ ASGI_APPLICATION = "configuration.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": read_text("DATABASE_DEFAULT_NAME", "stormcast"),
-        "USER": read_text("DATABASE_DEFAULT_USER", "admin"),
-        "PASSWORD": read_text("DATABASE_DEFAULT_PASSWORD", ""),
-        "HOST": read_text("DATABASE_INTERFACE_HOST", "database"),
-        "PORT": read_integer_variable("DATABASE_INTERFACE_CONTAINER_PORT", 5432),
-        "CONN_MAX_AGE": read_integer_variable("DATABASE_CONNECTION_MAX_AGE", 0),
+        "NAME": read_text(
+            "DATABASE__GENERAL__NAME",
+            "stormcast",
+        ),
+        "USER": read_text(
+            "DATABASE__CREDENTIALS__DEFAULT__USERNAME",
+            "admin",
+        ),
+        "PASSWORD": read_text(
+            "DATABASE__CREDENTIALS__DEFAULT__PASSWORD",
+            "",
+        ),
+        "HOST": read_text(
+            "DATABASE__INTERFACE__HOSTNAME",
+            "database",
+        ),
+        "PORT": read_integer_variable(
+            "DATABASE__INTERFACE__PORT__CONTAINER",
+            5432,
+        ),
+        "CONN_MAX_AGE": read_integer_variable(
+            "DATABASE__CONNECTION__MAX_AGE",
+            0,
+        ),
         "OPTIONS": {
             "connect_timeout": 10,
         },
@@ -215,7 +242,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "ru-RU"
 
-TIME_ZONE = read_text("TIME_ZONE", "Europe/Moscow")
+TIME_ZONE = read_text(
+    "COMMON__TIME_ZONE",
+    "Europe/Moscow",
+)
 
 USE_I18N = True
 
@@ -266,7 +296,10 @@ REST_FRAMEWORK = {
     # Пагинация
     # ---------------------------------------------------------------------
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": read_integer_variable("API_PAGE_SIZE", 50),
+    "PAGE_SIZE": read_integer_variable(
+        "APPLICATION__INTERFACE__PAGINATION__PAGE_SIZE",
+        50,
+    ),
 
     # ---------------------------------------------------------------------
     # Формат данных
@@ -336,7 +369,10 @@ SPECTACULAR_SETTINGS = {
 # Для нескольких процессов или контейнеров требуется внешний кэш (Redis).
 
 if APPLICATION_FEATURE_USE_REDIS:
-    REDIS_DSN = read_text("EVENT_BUS_DSN", "redis://event-bus:6379/0")
+    REDIS_DSN = read_text(
+        "EVENT_BUS__CONNECTION__DSN",
+        "redis://event-bus:6379/0",
+    )
 
     CACHES = {
         "default": {
@@ -362,7 +398,10 @@ else:
 # включённом признаке использования Redis.
 
 if APPLICATION_FEATURE_USE_REDIS:
-    CELERY_BROKER_URL = read_text("EVENT_BUS_DSN", "redis://event-bus:6379/0")
+    CELERY_BROKER_URL = read_text(
+        "EVENT_BUS__CONNECTION__DSN",
+        "redis://event-bus:6379/0",
+    )
     CELERY_RESULT_BACKEND = CELERY_BROKER_URL
     CELERY_TASK_ALWAYS_EAGER = False
     CELERY_TASK_SERIALIZER = "json"
@@ -382,35 +421,115 @@ else:
 # Почтовые настройки
 # -------------------------------------------------------------------------
 
-EMAIL_BACKEND = read_text(
-    "MAIL_BACKEND",
+# Django 6.1 использует MAILERS вместо прежнего набора EMAIL_* настроек.
+# Один SMTP backend применяется и для Mailpit в разработке, и для
+# производственного почтового сервера.
+#
+# Между окружениями изменяются сетевой адрес, порт, учётные данные
+# и параметры защищённого соединения.
+
+MAIL_SERVER_BACKEND = read_text(
+    "MAIL_SERVER__CONNECTION__BACKEND",
     "django.core.mail.backends.smtp.EmailBackend",
 )
 
-EMAIL_HOST = read_text("MAIL_SERVER_HOST", "mail-server")
-EMAIL_PORT = read_integer_variable("MAIL_SERVER_INTERFACE_CONTAINER_PORT", 1025)
-EMAIL_USE_TLS = read_boolean_variable("MAIL_SERVER_USE_TLS", False)
-EMAIL_USE_SSL = read_boolean_variable("MAIL_SERVER_USE_SSL", False)
-EMAIL_HOST_USER = read_text("MAIL_SERVER_USER")
-EMAIL_HOST_PASSWORD = read_text("MAIL_SERVER_PASSWORD")
+MAIL_SERVER_USE_TLS = read_boolean_variable(
+    "MAIL_SERVER__INTERFACE__CONNECTION__TLS__ENABLED",
+    False,
+)
 
-DEFAULT_FROM_EMAIL = read_text("MAIL_SERVER_DEFAULT_EMAIL", "stormcast@localhost")
+MAIL_SERVER_USE_SSL = read_boolean_variable(
+    "MAIL_SERVER__INTERFACE__CONNECTION__SSL__ENABLED",
+    False,
+)
+
+# SMTP не может одновременно использовать явный TLS (STARTTLS)
+# и неявный TLS (SSL).
+if MAIL_SERVER_USE_TLS and MAIL_SERVER_USE_SSL:
+    raise ValueError(
+        "SMTP connection cannot enable TLS and SSL simultaneously."
+    )
+
+# Параметры подключения передаются только SMTP backend.
+# Это позволяет при необходимости переключиться, например, на Console backend.
+MAIL_SERVER_OPTIONS = {}
+
+if MAIL_SERVER_BACKEND == "django.core.mail.backends.smtp.EmailBackend":
+    MAIL_SERVER_OPTIONS = {
+        "host": read_text(
+            "MAIL_SERVER__INTERFACE__HOSTNAME",
+            "mail-server",
+        ),
+        "port": read_integer_variable(
+            "MAIL_SERVER__INTERFACE__PORT__CONTAINER",
+            1025,
+        ),
+        "username": read_text(
+            "MAIL_SERVER__INTERFACE__CREDENTIALS__USERNAME",
+            "",
+        ),
+        "password": read_text(
+            "MAIL_SERVER__INTERFACE__CREDENTIALS__PASSWORD",
+            "",
+        ),
+        "use_tls": MAIL_SERVER_USE_TLS,
+        "use_ssl": MAIL_SERVER_USE_SSL,
+    }
+
+MAILERS = {
+    "default": {
+        "BACKEND": MAIL_SERVER_BACKEND,
+        "OPTIONS": MAIL_SERVER_OPTIONS,
+    },
+}
+
+# Адрес отправителя по умолчанию.
+DEFAULT_FROM_EMAIL = read_text(
+    "MAIL_SERVER__IDENTITY__DEFAULT_SENDER",
+    "stormcast@localhost",
+)
+
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 EMAIL_SUBJECT_PREFIX = f"[{APPLICATION_NAME}] "
 
-# Количество повторных попыток при сбоях SMTP.
-EMAIL_SEND_MAX_RETRIES = read_integer_variable("MAIL_SEND_MAX_RETRIES", 3)
+# Количество повторных попыток отправки.
+#
+# Это прикладной параметр, а не настройка SMTP backend Django.
+# Он должен использоваться логикой отправки сообщений или фоновой задачи.
+MAIL_SEND_MAX_RETRIES = read_integer_variable(
+    "MAIL_SERVER__CONNECTION__RETRY__MAX_ATTEMPTS",
+    3,
+)
 
 
 # -------------------------------------------------------------------------
 # Объектное хранилище (MinIO / S3)
 # -------------------------------------------------------------------------
 
-OBJECT_STORAGE_ADDRESS = read_text("OBJECT_STORAGE_ADDRESS", "minio:9000")
-OBJECT_STORAGE_BUCKET = read_text("OBJECT_STORAGE_BUCKET", "stormcast")
-OBJECT_STORAGE_DEFAULT_USER = read_text("OBJECT_STORAGE_DEFAULT_USER", "admin")
-OBJECT_STORAGE_DEFAULT_PASSWORD = read_text("OBJECT_STORAGE_DEFAULT_PASSWORD", "password")
-OBJECT_STORAGE_USE_SSL = read_boolean_variable("OBJECT_STORAGE_USE_SSL", False)
+OBJECT_STORAGE_ENDPOINT = read_text(
+    "OBJECT_STORAGE__INTERFACE__ENDPOINT",
+    "object-storage:9000",
+)
+
+OBJECT_STORAGE_BUCKET = read_text(
+    "OBJECT_STORAGE__BUCKET__NAME",
+    "stormcast",
+)
+
+OBJECT_STORAGE_DEFAULT_USER = read_text(
+    "OBJECT_STORAGE__CREDENTIALS__DEFAULT__USERNAME",
+    "admin",
+)
+
+OBJECT_STORAGE_DEFAULT_PASSWORD = read_text(
+    "OBJECT_STORAGE__CREDENTIALS__DEFAULT__PASSWORD",
+    "password",
+)
+
+OBJECT_STORAGE_TLS_ENABLED = read_boolean_variable(
+    "OBJECT_STORAGE__INTERFACE__CONNECTION__TLS__ENABLED",
+    False,
+)
 
 # Подключение django-storages выполняется после установки пакета.
 # Раскомментируйте блок и добавьте "storages" в INSTALLED_APPS.
@@ -423,7 +542,9 @@ OBJECT_STORAGE_USE_SSL = read_boolean_variable("OBJECT_STORAGE_USE_SSL", False)
 #         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
 #     },
 # }
-# AWS_S3_ENDPOINT_URL = f"http{'s' if OBJECT_STORAGE_USE_SSL else ''}://{OBJECT_STORAGE_ADDRESS}"
+# AWS_S3_ENDPOINT_URL = (
+#     f"http{'s' if OBJECT_STORAGE_TLS_ENABLED else ''}://{OBJECT_STORAGE_ENDPOINT}"
+# )
 # AWS_STORAGE_BUCKET_NAME = OBJECT_STORAGE_BUCKET
 # AWS_S3_ACCESS_KEY_ID = OBJECT_STORAGE_DEFAULT_USER
 # AWS_S3_SECRET_ACCESS_KEY = OBJECT_STORAGE_DEFAULT_PASSWORD
@@ -470,10 +591,22 @@ else:
     # Продакшен: HTTPS обязателен.
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = read_boolean_variable("APPLICATION_SSL_REDIRECT", True)
-    SECURE_HSTS_SECONDS = read_integer_variable("APPLICATION_HSTS_SECONDS", 31_536_000)
+
+    SECURE_SSL_REDIRECT = read_boolean_variable(
+        "APPLICATION__GENERAL__SECURITY__SSL_REDIRECT",
+        True,
+    )
+
+    SECURE_HSTS_SECONDS = read_integer_variable(
+        "APPLICATION__GENERAL__SECURITY__HSTS__SECONDS",
+        31_536_000,
+    )
+
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+    # Traefik передаёт исходный протокол запроса в заголовке
+    # X-Forwarded-Proto. Django использует его для определения HTTPS.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
@@ -481,7 +614,10 @@ else:
 # Протоколирование
 # -------------------------------------------------------------------------
 
-LOG_LEVEL = read_text("APPLICATION_LOG_LEVEL", "DEBUG" if DEBUG else "INFO").upper()
+LOG_LEVEL = read_text(
+    "APPLICATION__GENERAL__LOGGING__LEVEL",
+    "DEBUG" if DEBUG else "INFO",
+).upper()
 
 LOGGING = {
     "version": 1,

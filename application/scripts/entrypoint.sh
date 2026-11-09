@@ -27,7 +27,7 @@ record_log_entry "Ожидание готовности базы данных...
 
 # Цикл ожидания, пока порт базы данных не станет доступен
 # (Имена переменных синхронизированы с settings.py)
-while ! python -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('${DATABASE_INTERFACE_HOST:-database}', ${DATABASE_INTERFACE_CONTAINER_PORT:-5432}))" 2>/dev/null; do
+while ! python -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('${DATABASE__INTERFACE__HOSTNAME:-database}', ${DATABASE__INTERFACE__PORT__CONTAINER:-5432}))" 2>/dev/null; do
     record_log_entry "База данных недоступна, повторная попытка через 2 секунды..."
     sleep 2
 done
@@ -52,7 +52,7 @@ python manage.py collectstatic --noinput
 # Инициализация суперпользователя на основе переменных окружения.
 # Если пользователь с таким логином уже существует, создание пропускается.
 
-if [ -n "${APPLICATION_DEFAULT_USER:-}" ] && [ -n "${APPLICATION_DEFAULT_PASSWORD:-}" ]; then
+if [ -n "${APPLICATION__DASHBOARD__CREDENTIALS__DEFAULT__USERNAME:-}" ] && [ -n "${APPLICATION__DASHBOARD__CREDENTIALS__DEFAULT__PASSWORD:-}" ]; then
     record_log_entry "Проверка и создание администратора по умолчанию..."
 
     python manage.py shell -c "
@@ -61,9 +61,9 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
-username = os.environ.get('APPLICATION_DEFAULT_USER')
-password = os.environ.get('APPLICATION_DEFAULT_PASSWORD')
-email = os.environ.get('APPLICATION_DEFAULT_EMAIL', 'admin@stormcast.local')
+username = os.environ.get('APPLICATION__DASHBOARD__CREDENTIALS__DEFAULT__USERNAME')
+password = os.environ.get('APPLICATION__DASHBOARD__CREDENTIALS__DEFAULT__PASSWORD')
+email = os.environ.get('APPLICATION__DASHBOARD__CREDENTIALS__DEFAULT__EMAIL')
 
 # Определяем поле для логина (username или email, если модель кастомная)
 username_field = getattr(User, 'USERNAME_FIELD', 'username')

@@ -1,7 +1,7 @@
 services:
 
   # -----------------------------------------------------------------------
-  # Приложение (Python Django)
+  # Приложение (Stormcast)
   # -----------------------------------------------------------------------
 
   application:
@@ -11,42 +11,29 @@ services:
       context: ./application
       dockerfile: Dockerfile
 
-      network: host
-
     depends_on:
 
       database:
         condition: service_healthy
 
-      # event-bus:
-      #   condition: service_healthy
-
-      # object-storage:
-      #   condition: service_healthy
-
     env_file:
       - .env
 
     environment:
-      TZ: ${TIME_ZONE}
-
-      DATABASE_INTERFACE_HOST: database
+      TZ: ${COMMON__TIME_ZONE}
 
     command: >
       python
       manage.py
-      runserver 0.0.0.0:${APPLICATION_DASHBOARD_CONTAINER_PORT}
-
-    # volumes:
-    #   - ./application/codebase:/application
+      runserver 0.0.0.0:${APPLICATION__DASHBOARD__PORT__CONTAINER}
 
     ports:
-      - "${APPLICATION_DASHBOARD_HOST_PORT}:${APPLICATION_DASHBOARD_CONTAINER_PORT}"
-      - "${APPLICATION_INTERFACE_HOST_PORT}:${APPLICATION_INTERFACE_CONTAINER_PORT}"
+      - "${APPLICATION__DASHBOARD__PORT__PUBLISHED}:${APPLICATION__DASHBOARD__PORT__CONTAINER}"
+      - "${APPLICATION__INTERFACE__PORT__PUBLISHED}:${APPLICATION__INTERFACE__PORT__CONTAINER}"
 
     networks:
       - internal
-      - proxy
+      - proxy  # Добавлено для корректной работы маршрутизации Traefik
 
     restart: unless-stopped
 
@@ -54,7 +41,7 @@ services:
 
       test: [
         "CMD", "python", "-c",
-        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${APPLICATION_DASHBOARD_CONTAINER_PORT}/api/v1/health/', timeout=5)"
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${APPLICATION__INTERFACE__PORT__CONTAINER}/api/v1/health/', timeout=5)"
       ]
 
       interval: 15s
@@ -67,21 +54,21 @@ services:
       # Общие настройки маршрутизации
       - "traefik.enable=true"
 
-      # Маршрут панели управления
-      - "traefik.http.routers.stormcast.rule=Host(`${APPLICATION_DASHBOARD_DOMAIN}`)"
-      - "traefik.http.routers.stormcast.entrypoints=web"
-      - "traefik.http.routers.stormcast.service=stormcast"
+      # Маршрут панели управления (основной и ролевой домены)
+      - "traefik.http.routers.${APPLICATION__DASHBOARD__ROUTING__DOMAIN}.rule=Host(`${APPLICATION__DASHBOARD__ROUTING__DOMAIN}`) || Host(`${APPLICATION__DASHBOARD__ROUTING__ROLE_DOMAIN}`)"
+      - "traefik.http.routers.${APPLICATION__DASHBOARD__ROUTING__DOMAIN}.entrypoints=web"
+      - "traefik.http.routers.${APPLICATION__DASHBOARD__ROUTING__DOMAIN}.service=${APPLICATION__DASHBOARD__ROUTING__DOMAIN}"
 
-      # Маршрут программного интерфейса
-      - "traefik.http.routers.interface.stormcast.rule=Host(`${APPLICATION_INTERFACE_DOMAIN}`)"
-      - "traefik.http.routers.interface.stormcast.entrypoints=web"
-      - "traefik.http.routers.interface.stormcast.service=interface.stormcast"
+      # Маршрут программного интерфейса (основной и ролевой домены)
+      - "traefik.http.routers.${APPLICATION__INTERFACE__ROUTING__DOMAIN}.rule=Host(`${APPLICATION__INTERFACE__ROUTING__DOMAIN}`) || Host(`${APPLICATION__INTERFACE__ROUTING__ROLE_DOMAIN}`)"
+      - "traefik.http.routers.${APPLICATION__INTERFACE__ROUTING__DOMAIN}.entrypoints=web"
+      - "traefik.http.routers.${APPLICATION__INTERFACE__ROUTING__DOMAIN}.service=${APPLICATION__INTERFACE__ROUTING__DOMAIN}"
 
       # Сервис панели управления
-      - "traefik.http.services.stormcast.loadbalancer.server.port=${APPLICATION_DASHBOARD_CONTAINER_PORT}"
+      - "traefik.http.services.${APPLICATION__DASHBOARD__ROUTING__DOMAIN}.loadbalancer.server.port=${APPLICATION__DASHBOARD__PORT__CONTAINER}"
 
       # Сервис программного интерфейса
-      - "traefik.http.services.interface.stormcast.loadbalancer.server.port=${APPLICATION_INTERFACE_CONTAINER_PORT}"
+      - "traefik.http.services.${APPLICATION__INTERFACE__ROUTING__DOMAIN}.loadbalancer.server.port=${APPLICATION__INTERFACE__PORT__CONTAINER}"
 
 
   # -----------------------------------------------------------------------
@@ -95,14 +82,12 @@ services:
       context: ./database
       dockerfile: Dockerfile
 
-      network: host
-
     environment:
-      TZ: ${TIME_ZONE}
+      TZ: ${COMMON__TIME_ZONE}
 
-      POSTGRES_DB: ${DATABASE_DEFAULT_NAME}
-      POSTGRES_USER: ${DATABASE_DEFAULT_USER}
-      POSTGRES_PASSWORD: ${DATABASE_DEFAULT_PASSWORD}
+      POSTGRES_DB: ${DATABASE__GENERAL__NAME}
+      POSTGRES_USER: ${DATABASE__CREDENTIALS__DEFAULT__USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE__CREDENTIALS__DEFAULT__PASSWORD}
 
     volumes:
 
@@ -132,15 +117,19 @@ services:
       # для PostgreSQL.
       #
       # Если порт должен быть доступен только на сервере:
-      # - "127.0.0.1:${DATABASE_INTERFACE_HOST_PORT}:${DATABASE_INTERFACE_CONTAINER_PORT}"
+      # - "127.0.0.1:${DATABASE__INTERFACE__PORT__PUBLISHED}:${DATABASE__INTERFACE__PORT__CONTAINER}"
       #
       # Для доступа из локальной сети:
-      - "${DATABASE_INTERFACE_HOST_PORT}:${DATABASE_INTERFACE_CONTAINER_PORT}"
+      - "${DATABASE__INTERFACE__PORT__PUBLISHED}:${DATABASE__INTERFACE__PORT__CONTAINER}"
 
     restart: unless-stopped
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_DEFAULT_USER} -d ${DATABASE_DEFAULT_NAME}"]
+
+      test: [
+        "CMD-SHELL",
+        "pg_isready -U ${DATABASE__CREDENTIALS__DEFAULT__USERNAME} -d ${DATABASE__GENERAL__NAME}"
+      ]
 
       interval: 10s
       timeout: 5s
@@ -153,52 +142,69 @@ services:
   # -----------------------------------------------------------------------
 
   database-manager:
-    image: dpage/pgadmin4:9.17
+    image: database_manager/pgadmin4:9.17
+
+    build:
+      context: ./database_manager
+      dockerfile: Dockerfile
 
     depends_on:
 
       database:
         condition: service_healthy
 
-    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
-    profiles:
-      - dev
+    env_file:
+      - .env
 
     environment:
 
       # Часовой пояс
-      TZ: ${TIME_ZONE}
+      TZ: ${COMMON__TIME_ZONE}
 
       # Отключение многопользовательского режима
-      # Позволяет работать без создания отдельных учётных записей
+      # Позволяет работать без создания отдельных учётных записей.
       PGADMIN_CONFIG_SERVER_MODE: 'False'
 
       # Отключение требования мастер-пароля
-      # Интерфейс открывается без предварительного ввода пароля
+      # Интерфейс открывается без предварительного ввода мастер-пароля.
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
 
+      # Разрешение специальных доменов для электронной почты (например, .local, .dev)
+      # Строгий валидатор электронной почты в pgAdmin по умолчанию блокирует зарезервированные домены.
+      # Эта настройка добавляет их в белый список, позволяя использовать локальные адреса.
+      PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS: "['local']"
+
       # Отключение усиленной защиты cookies
-      # Упрощает автоматический вход в закрытой сети
+      # Упрощает автоматический вход в закрытой сети разработки.
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: 'False'
 
       # Учётные данные для входа в интерфейс
-      PGADMIN_DEFAULT_EMAIL: ${DATABASE_MANAGER_DEFAULT_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${DATABASE_MANAGER_DEFAULT_PASSWORD}
+      #
+      # pgAdmin требует синтаксически корректный email-адрес.
+      # Адрес используется как идентификатор локальной учётной записи
+      # и не обязан соответствовать реальному почтовому ящику.
+      PGADMIN_DEFAULT_EMAIL: ${DATABASE_MANAGER__DASHBOARD__CREDENTIALS__DEFAULT__EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${DATABASE_MANAGER__DASHBOARD__CREDENTIALS__DEFAULT__PASSWORD}
 
     volumes:
 
-      # Изменяемые данные
-      - ./database_manager/data/runtime:/var/lib/pgadmin
+      # Изменяемые данные (сессии, настройки интерфейса)
+      - database-manager-runtime:/var/lib/pgadmin
 
-      # Управляющие файлы (только чтение)
-      - ./database_manager/data/control/servers.json:/pgadmin4/servers.json:ro
-      - ./database_manager/data/control/pgpass:/pgadmin4/pgpass:ro
+      # Каталог управляющих файлов.
+      # Монтируется каталог целиком, а не отдельные файлы.
+      # Это предотвращает автоматическое создание каталога вместо файла 
+      # со стороны Docker, если файл отсутствует на хосте.
+      # Скрипт инициализации внутри контейнера создаст файлы в этом каталоге,
+      # и они станут доступны на хост-машине.
+      - ./database_manager/data/control:/pgadmin4/control
 
     networks:
       - internal
+      - proxy
 
     ports:
-      - "${DATABASE_MANAGER_DASHBOARD_HOST_PORT}:${DATABASE_MANAGER_DASHBOARD_CONTAINER_PORT}"
+      - "${DATABASE_MANAGER__DASHBOARD__PORT__PUBLISHED}:${DATABASE_MANAGER__DASHBOARD__PORT__CONTAINER}"
 
     restart: unless-stopped
 
@@ -207,31 +213,29 @@ services:
       # Общие настройки маршрутизации
       - "traefik.enable=true"
 
-      # Маршрут панели управления
-      - "traefik.http.routers.manager.database.stormcast.rule=Host(`${DATABASE_MANAGER_DASHBOARD_DOMAIN}`)"
-      - "traefik.http.routers.manager.database.stormcast.entrypoints=web"
-      - "traefik.http.routers.manager.database.stormcast.service=manager.database.stormcast"
+      # Маршрут панели управления (основной и ролевой домены)
+      - "traefik.http.routers.${DATABASE_MANAGER__DASHBOARD__ROUTING__DOMAIN}.rule=Host(`${DATABASE_MANAGER__DASHBOARD__ROUTING__DOMAIN}`) || Host(`${DATABASE_MANAGER__DASHBOARD__ROUTING__ROLE_DOMAIN}`)"
+      - "traefik.http.routers.${DATABASE_MANAGER__DASHBOARD__ROUTING__DOMAIN}.entrypoints=web"
+      - "traefik.http.routers.${DATABASE_MANAGER__DASHBOARD__ROUTING__DOMAIN}.service=${DATABASE_MANAGER__DASHBOARD__ROUTING__DOMAIN}"
 
       # Сервис панели управления
-      - "traefik.http.services.manager.database.stormcast.loadbalancer.server.port=${DATABASE_MANAGER_DASHBOARD_CONTAINER_PORT}"
+      - "traefik.http.services.${DATABASE_MANAGER__DASHBOARD__ROUTING__DOMAIN}.loadbalancer.server.port=${DATABASE_MANAGER__DASHBOARD__PORT__CONTAINER}"
 
 
   # -----------------------------------------------------------------------
-  # Служба автоматического резервного копирования базы данных (Python)
+  # Архиватор базы данных
   # -----------------------------------------------------------------------
 
   database-archiver:
     image: database_archiver/alpine:3.20
 
-    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
-    profiles:
-      - dev
-
     build:
       context: ./database_archiver
       dockerfile: Dockerfile
 
-      network: host
+    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
+    profiles:
+      - dev
 
     depends_on:
 
@@ -239,21 +243,7 @@ services:
         condition: service_healthy
 
     environment:
-      TZ: ${TIME_ZONE}
-
-      DATABASE_HOST: database
-      DATABASE_NAME: ${DATABASE_DEFAULT_NAME}
-      DATABASE_USER: ${DATABASE_DEFAULT_USER}
-      DATABASE_PASSWORD: ${DATABASE_DEFAULT_PASSWORD}
-
-      # Путь внутри контейнера для сохранения архивов
-      ARTIFACTS_PATH: /data/artifacts
-
-      # Расписание запуска в формате UNIX cron
-      CRON_SCHEDULE: "0 3 * * *"
-
-      # Срок хранения резервных копий в днях (устаревшие архивы удаляются автоматически)
-      RETENTION_PERIOD_DAYS: 30
+      TZ: ${COMMON__TIME_ZONE}
 
     volumes:
       - ./database_archiver/data/artifacts:/data/artifacts
@@ -271,12 +261,8 @@ services:
   event-bus:
     image: redis:7.4-alpine
 
-    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
-    profiles:
-      - dev
-
     environment:
-      TZ: ${TIME_ZONE}
+      TZ: ${COMMON__TIME_ZONE}
 
     command: >
       redis-server
@@ -289,51 +275,47 @@ services:
 
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-
       interval: 5s
       timeout: 3s
       retries: 5
 
 
   # -----------------------------------------------------------------------
-  # Объектное хранилище (MinIO)
+  # Объектное хранилище (Silo)
   # -----------------------------------------------------------------------
 
   object-storage:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-
-    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
-    profiles:
-      - dev
+    image: pgsty/silo:RELEASE.2026-10-18T00-00-00Z
 
     environment:
-      TZ: ${TIME_ZONE}
+      TZ: ${COMMON__TIME_ZONE}
 
-      MINIO_ROOT_USER: ${OBJECT_STORAGE_DEFAULT_USER}
-      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_DEFAULT_PASSWORD}
+      MINIO_ROOT_USER: ${OBJECT_STORAGE__CREDENTIALS__DEFAULT__USERNAME}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE__CREDENTIALS__DEFAULT__PASSWORD}
 
     command: >
       server /data
-      --console-address ":${OBJECT_STORAGE_DASHBOARD_CONTAINER_PORT}"
+      --console-address ":${OBJECT_STORAGE__DASHBOARD__PORT__CONTAINER}"
 
     volumes:
       # - ./object_storage/data/runtime:/data  # Хранение данных в директории хоста (bind mount)
       - object-storage-runtime:/data           # Хранение данных в именованном томе Docker (volume)
 
     ports:
-      - "${OBJECT_STORAGE_DASHBOARD_HOST_PORT}:${OBJECT_STORAGE_DASHBOARD_CONTAINER_PORT}"
-      - "${OBJECT_STORAGE_INTERFACE_HOST_PORT}:${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}"
+      - "${OBJECT_STORAGE__DASHBOARD__PORT__PUBLISHED}:${OBJECT_STORAGE__DASHBOARD__PORT__CONTAINER}"
+      - "${OBJECT_STORAGE__INTERFACE__PORT__PUBLISHED}:${OBJECT_STORAGE__INTERFACE__PORT__CONTAINER}"
 
     networks:
       - internal
+      - proxy
 
     restart: unless-stopped
 
     healthcheck:
-
+  
       test: [
-        "CMD",
-        "curl", "-f", "http://localhost:${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}/minio/health/live"
+        "CMD", "curl", "-f",
+        "http://localhost:${OBJECT_STORAGE__INTERFACE__PORT__CONTAINER}/minio/health/live"
       ]
 
       interval: 10s
@@ -345,44 +327,41 @@ services:
       # Общие настройки маршрутизации
       - "traefik.enable=true"
 
-      # Маршрут панели управления
-      - "traefik.http.routers.storage.stormcast.rule=Host(`${OBJECT_STORAGE_DASHBOARD_DOMAIN}`)"
-      - "traefik.http.routers.storage.stormcast.entrypoints=web"
-      - "traefik.http.routers.storage.stormcast.service=storage.stormcast"
+      # Маршрут панели управления (основной и ролевой домены)
+      - "traefik.http.routers.${OBJECT_STORAGE__DASHBOARD__ROUTING__DOMAIN}.rule=Host(`${OBJECT_STORAGE__DASHBOARD__ROUTING__DOMAIN}`) || Host(`${OBJECT_STORAGE__DASHBOARD__ROUTING__ROLE_DOMAIN}`)"
+      - "traefik.http.routers.${OBJECT_STORAGE__DASHBOARD__ROUTING__DOMAIN}.entrypoints=web"
+      - "traefik.http.routers.${OBJECT_STORAGE__DASHBOARD__ROUTING__DOMAIN}.service=${OBJECT_STORAGE__DASHBOARD__ROUTING__DOMAIN}"
 
-      # Маршрут программного интерфейса
-      - "traefik.http.routers.interface.storage.stormcast.rule=Host(`${OBJECT_STORAGE_INTERFACE_DOMAIN}`)"
-      - "traefik.http.routers.interface.storage.stormcast.entrypoints=web"
-      - "traefik.http.routers.interface.storage.stormcast.service=interface.storage.stormcast"
+      # Маршрут программного интерфейса (основной и ролевой домены)
+      - "traefik.http.routers.${OBJECT_STORAGE__INTERFACE__ROUTING__DOMAIN}.rule=Host(`${OBJECT_STORAGE__INTERFACE__ROUTING__DOMAIN}`) || Host(`${OBJECT_STORAGE__INTERFACE__ROUTING__ROLE_DOMAIN}`)"
+      - "traefik.http.routers.${OBJECT_STORAGE__INTERFACE__ROUTING__DOMAIN}.entrypoints=web"
+      - "traefik.http.routers.${OBJECT_STORAGE__INTERFACE__ROUTING__DOMAIN}.service=${OBJECT_STORAGE__INTERFACE__ROUTING__DOMAIN}"
 
       # Сервис панели управления
-      - "traefik.http.services.storage.stormcast.loadbalancer.server.port=${OBJECT_STORAGE_DASHBOARD_CONTAINER_PORT}"
+      - "traefik.http.services.${OBJECT_STORAGE__DASHBOARD__ROUTING__DOMAIN}.loadbalancer.server.port=${OBJECT_STORAGE__DASHBOARD__PORT__CONTAINER}"
 
       # Сервис программного интерфейса
-      - "traefik.http.services.interface.storage.stormcast.loadbalancer.server.port=${OBJECT_STORAGE_INTERFACE_CONTAINER_PORT}"
+      - "traefik.http.services.${OBJECT_STORAGE__INTERFACE__ROUTING__DOMAIN}.loadbalancer.server.port=${OBJECT_STORAGE__INTERFACE__PORT__CONTAINER}"
 
 
   # -----------------------------------------------------------------------
-  # Почтовй сервер (Mailpit)
+  # Почтовый сервер (Mailpit)
   # -----------------------------------------------------------------------
 
   mail-server:
     image: axllent/mailpit:v1.21
 
-    # Профиль разработчика: образ запускается только при явной передаче параметра профиля
-    profiles:
-      - dev
-
     networks:
       - internal
+      - proxy # Добавлено для корректной работы маршрутизации Traefik
 
     ports:
 
       # Веб-интерфейс (по умолчанию: 8025)
-      - "${MAIL_SERVER_DASHBOARD_HOST_PORT}:${MAIL_SERVER_DASHBOARD_CONTAINER_PORT}"
+      - "${MAIL_SERVER__DASHBOARD__PORT__PUBLISHED}:${MAIL_SERVER__DASHBOARD__PORT__CONTAINER}"
 
       # SMTP (по умолчанию: 1025)
-      - "${MAIL_SERVER_INTERFACE_HOST_PORT}:${MAIL_SERVER_INTERFACE_CONTAINER_PORT}"
+      - "${MAIL_SERVER__INTERFACE__PORT__PUBLISHED}:${MAIL_SERVER__INTERFACE__PORT__CONTAINER}"
 
     restart: unless-stopped
 
@@ -391,13 +370,13 @@ services:
       # Общие настройки маршрутизации
       - "traefik.enable=true"
 
-      # Маршрут панели управления
-      - "traefik.http.routers.mail.stormcast.rule=Host(`${MAIL_SERVER_DASHBOARD_DOMAIN}`)"
-      - "traefik.http.routers.mail.stormcast.entrypoints=web"
-      - "traefik.http.routers.mail.stormcast.service=mail.stormcast"
+      # Маршрут панели управления (основной и ролевой домены)
+      - "traefik.http.routers.${MAIL_SERVER__DASHBOARD__ROUTING__DOMAIN}.rule=Host(`${MAIL_SERVER__DASHBOARD__ROUTING__DOMAIN}`) || Host(`${MAIL_SERVER__DASHBOARD__ROUTING__ROLE_DOMAIN}`)"
+      - "traefik.http.routers.${MAIL_SERVER__DASHBOARD__ROUTING__DOMAIN}.entrypoints=web"
+      - "traefik.http.routers.${MAIL_SERVER__DASHBOARD__ROUTING__DOMAIN}.service=${MAIL_SERVER__DASHBOARD__ROUTING__DOMAIN}"
 
       # Сервис панели управления
-      - "traefik.http.services.mail.stormcast.loadbalancer.server.port=${MAIL_SERVER_DASHBOARD_CONTAINER_PORT}"
+      - "traefik.http.services.${MAIL_SERVER__DASHBOARD__ROUTING__DOMAIN}.loadbalancer.server.port=${MAIL_SERVER__DASHBOARD__PORT__CONTAINER}"
 
 
 networks:
@@ -413,5 +392,48 @@ networks:
 
 volumes:
 
+  # Рабочие данные PostgreSQL
+  #
+  # Том содержит физические рабочие файлы PostgreSQL: таблицы, индексы,
+  # журналы и другие внутренние данные сервера базы данных.
+  #
+  # Этот том является средой выполнения конкретного экземпляра PostgreSQL
+  # и не предназначен для переноса базы данных между серверами или окружениями.
+  #
+  # Для резервного копирования и переноса используется логическое копирование
+  # базы данных. При восстановлении на новом экземпляре PostgreSQL создаётся
+  # новое рабочее хранилище, после чего в него накатывается логическая
+  # резервная копия.
   database-runtime:
+
+
+  # Постоянное хранилище артефактов приложения
+  #
+  # Том содержит файлы, создаваемые и сохраняемые приложением Stormcast:
+  # сформированные документы, отправляемые по электронной почте материалы,
+  # сохранённые электронные сообщения и другие производные артефакты.
+  #
+  # Основные сведения об артефактах, их составе и принадлежности хранятся
+  # в PostgreSQL в виде записей. После генерации окончательная отрендеренная
+  # версия документа сохраняется в объектном хранилище для последующего
+  # доступа и аудита.
+  #
+  # В отличие от рабочего тома PostgreSQL, это хранилище содержит собственно
+  # пользовательские и прикладные данные, созданные системой. При переносе
+  # проекта необходимо учитывать как данные PostgreSQL, так и содержимое
+  # объектного хранилища.
   object-storage-runtime:
+
+  # Рабочие данные менеджера базы данных
+  #
+  # Том содержит внутренние данные pgAdmin: локальную базу конфигурации,
+  # сведения о зарегистрированных серверах, пользовательские настройки,
+  # сохранённые подключения и данные сессий.
+  #
+  # Эти данные относятся к интерфейсу администрирования и не содержат
+  # саму базу PostgreSQL. Их потеря не влияет на данные приложения,
+  # однако может потребовать повторной настройки pgAdmin.
+  #
+  # Том можно пересоздать при необходимости, предварительно сохранив
+  # конфигурацию подключений, если она не восстанавливается автоматически.
+  database-manager-runtime:
