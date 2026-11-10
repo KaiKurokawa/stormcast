@@ -50,18 +50,22 @@ class UniqueConstraint(models.UniqueConstraint):
 
 
 class PostgreSQLIndexNameLengthMixin:
+    """Представление данных документов."""
     max_name_length = POSTGRES_MAX_IDENTIFIER_LENGTH
 
 
 class PostgreSQLIndex(PostgreSQLIndexNameLengthMixin, models.Index):
+    """Представление данных документов."""
     pass
 
 
 class PostgreSQLGinIndex(PostgreSQLIndexNameLengthMixin, GinIndex):
+    """Представление данных документов."""
     pass
 
 
 class PostgreSQLGistIndex(PostgreSQLIndexNameLengthMixin, GistIndex):
+    """Представление данных документов."""
     pass
 
 
@@ -75,12 +79,15 @@ class ContentHashModel(models.Model):
     """
 
     class Meta:
+        """Описание полей и поведения записи."""
         abstract = True
 
     def calculate_content_hash(self):
+        """Вычисляет хеш полезной нагрузки снимка."""
         raise NotImplementedError
 
     def save(self, *args, **kwargs):
+        """Пересчитывает хеш при сохранении полезной нагрузки."""
         self.content_hash = self.calculate_content_hash()
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:

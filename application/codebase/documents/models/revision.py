@@ -64,7 +64,6 @@ class Revision(ContentHashModel):
         "stormcast_documents.DocumentEntity",
         on_delete=models.CASCADE,
         db_column="entity_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="revisions",
@@ -77,7 +76,6 @@ class Revision(ContentHashModel):
         "stormcast_documents.DocumentEntity",
         on_delete=models.SET_NULL,
         db_column="parent_id",
-        db_constraint=False,
         db_index=False,
         null=True,
         blank=True,
@@ -94,7 +92,6 @@ class Revision(ContentHashModel):
         "stormcast_documents.TemplateRevision",
         on_delete=models.RESTRICT,
         db_column="template_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="document_revisions",
@@ -136,6 +133,7 @@ class Revision(ContentHashModel):
     )
 
     field_overrides = models.JSONField(
+        default=dict,
         null=False,
 
         db_default=RawSQL(
@@ -152,6 +150,7 @@ class Revision(ContentHashModel):
     )
 
     message_bindings = models.JSONField(
+        default=list,
         null=False,
 
         db_default=RawSQL(
@@ -196,6 +195,7 @@ class Revision(ContentHashModel):
     )
 
     details = models.JSONField(
+        default=dict,
         null=False,
 
         db_default=RawSQL(
@@ -223,6 +223,7 @@ class Revision(ContentHashModel):
     )
 
     class Meta:
+        """Описание полей и поведения записи."""
         managed = True
         db_table = '"documents"."revisions"'
 
@@ -236,7 +237,7 @@ class Revision(ContentHashModel):
         constraints = [
 
             content_hash_length_constraint(
-                name="check_revisions_content_hash_length",
+                name="check_documents_revisions_content_hash_length",
 
                 violation_error_message=(
                     "Проверяет, что хеш содержимого документа "
@@ -245,7 +246,7 @@ class Revision(ContentHashModel):
             ),
 
             parent_not_self_constraint(
-                name="check_revisions_parent_not_self",
+                name="check_documents_revisions_parent_not_self",
 
                 violation_error_message=(
                     "Запрещает самопривязку, когда документ "
@@ -254,7 +255,7 @@ class Revision(ContentHashModel):
             ),
 
             message_bindings_is_array_constraint(
-                name="check_revisions_message_bindings_is_array",
+                name="check_documents_revisions_message_bindings_is_array",
 
                 violation_error_message=(
                     "Проверяет, что привязки сообщений хранятся "
@@ -325,6 +326,7 @@ class Revision(ContentHashModel):
         ]
 
     def calculate_content_hash(self):
+        """Вычисляет хеш полезной нагрузки снимка."""
         return document_revision_content_hash(
             template_id=self.template_id,
             out_number=self.out_number,

@@ -1,0 +1,12 @@
+DROP TRIGGER IF EXISTS trigger_documents_states_immutability ON documents.states;
+DROP TRIGGER IF EXISTS trigger_documents_states_cache_sync ON documents.states;
+DROP TRIGGER IF EXISTS trigger_documents_states_revision_entity_consistency ON documents.states;
+DROP TRIGGER IF EXISTS trigger_documents_state_cache_revision_entity_consistency ON documents.state_cache;
+DROP TRIGGER IF EXISTS trigger_documents_state_cache_updated_at ON documents.state_cache;
+DROP TRIGGER IF EXISTS trigger_documents_revisions_immutability ON documents.revisions;
+DROP TRIGGER IF EXISTS trigger_documents_revision_buffer_updated_at ON documents.revision_buffer;
+DROP TRIGGER IF EXISTS trigger_documents_revision_buffer_identity ON documents.revision_buffer;
+DROP TRIGGER IF EXISTS trigger_documents_template_revisions_immutability ON documents.template_revisions;
+DROP TRIGGER IF EXISTS trigger_documents_template_entities_immutability ON documents.template_entities;
+DROP TRIGGER IF EXISTS trigger_documents_entities_immutability ON documents.entities;
+DROP TRIGGER IF EXISTS trigger_documents_entities_state_initialization ON documents.entities;

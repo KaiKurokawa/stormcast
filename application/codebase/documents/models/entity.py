@@ -17,6 +17,8 @@ from django.conf import settings
 from django.db import models
 from django.db.models.expressions import RawSQL
 
+from documents.querysets import DocumentManager
+
 from .common import PostgreSQLIndex
 
 
@@ -32,6 +34,8 @@ class DocumentEntity(models.Model):
     Неизменяемость записи и инициализация начального состояния
     обеспечиваются триггерами PostgreSQL.
     """
+
+    objects = DocumentManager()
 
     id = models.UUIDField(
         primary_key=True,
@@ -77,6 +81,7 @@ class DocumentEntity(models.Model):
     )
 
     class Meta:
+        """Описание полей и поведения записи."""
         managed = True
         db_table = '"documents"."entities"'
 

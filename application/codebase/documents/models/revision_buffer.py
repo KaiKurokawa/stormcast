@@ -77,7 +77,6 @@ class RevisionBuffer(ContentHashModel):
         "stormcast_documents.DocumentEntity",
         on_delete=models.CASCADE,
         db_column="entity_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="revision_buffers",
@@ -90,7 +89,6 @@ class RevisionBuffer(ContentHashModel):
         "stormcast_documents.DocumentEntity",
         on_delete=models.SET_NULL,
         db_column="parent_id",
-        db_constraint=False,
         db_index=False,
         null=True,
         blank=True,
@@ -107,7 +105,6 @@ class RevisionBuffer(ContentHashModel):
         "stormcast_documents.TemplateRevision",
         on_delete=models.RESTRICT,
         db_column="template_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="document_revision_buffers",
@@ -149,6 +146,7 @@ class RevisionBuffer(ContentHashModel):
     )
 
     field_overrides = models.JSONField(
+        default=dict,
         null=False,
 
         db_default=RawSQL(
@@ -166,6 +164,7 @@ class RevisionBuffer(ContentHashModel):
     )
 
     message_bindings = models.JSONField(
+        default=list,
         null=False,
 
         db_default=RawSQL(
@@ -210,6 +209,7 @@ class RevisionBuffer(ContentHashModel):
     )
 
     details = models.JSONField(
+        default=dict,
         null=False,
 
         db_default=RawSQL(
@@ -237,6 +237,7 @@ class RevisionBuffer(ContentHashModel):
     )
 
     class Meta:
+        """Описание полей и поведения записи."""
         managed = True
         db_table = '"documents"."revision_buffer"'
 
@@ -261,7 +262,7 @@ class RevisionBuffer(ContentHashModel):
             ),
 
             content_hash_length_constraint(
-                name="check_revision_buffer_content_hash_length",
+                name="check_documents_revision_buffer_content_hash_length",
 
                 violation_error_message=(
                     "Проверяет, что хеш содержимого документа "
@@ -270,7 +271,7 @@ class RevisionBuffer(ContentHashModel):
             ),
 
             parent_not_self_constraint(
-                name="check_revision_buffer_parent_not_self",
+                name="check_documents_revision_buffer_parent_not_self",
 
                 violation_error_message=(
                     "Запрещает самопривязку, когда документ "
@@ -279,7 +280,7 @@ class RevisionBuffer(ContentHashModel):
             ),
 
             message_bindings_is_array_constraint(
-                name="check_revision_buffer_message_bindings_is_array",
+                name="check_documents_revision_buffer_message_bindings_is_array",
 
                 violation_error_message=(
                     "Проверяет, что привязки сообщений хранятся "
@@ -338,6 +339,7 @@ class RevisionBuffer(ContentHashModel):
         ]
 
     def calculate_content_hash(self):
+        """Вычисляет хеш полезной нагрузки снимка."""
         return document_revision_content_hash(
             template_id=self.template_id,
             out_number=self.out_number,

@@ -61,7 +61,6 @@ class TemplateRevision(ContentHashModel):
         "stormcast_documents.TemplateEntity",
         on_delete=models.CASCADE,
         db_column="template_entity_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="template_revisions",
@@ -125,6 +124,7 @@ class TemplateRevision(ContentHashModel):
     )
 
     field_schema = models.JSONField(
+        default=dict,
         null=False,
 
         db_default=RawSQL(
@@ -142,6 +142,7 @@ class TemplateRevision(ContentHashModel):
     )
 
     default_overrides = models.JSONField(
+        default=dict,
         null=False,
 
         db_default=RawSQL(
@@ -180,6 +181,7 @@ class TemplateRevision(ContentHashModel):
     )
 
     class Meta:
+        """Описание полей и поведения записи."""
         managed = True
         db_table = '"documents"."template_revisions"'
 
@@ -193,7 +195,7 @@ class TemplateRevision(ContentHashModel):
         constraints = [
 
             content_hash_length_constraint(
-                name="check_template_content_hash_length",
+                name="check_documents_template_content_hash_length",
 
                 violation_error_message=(
                     "Проверяет, что хеш содержимого шаблона "
@@ -244,6 +246,7 @@ class TemplateRevision(ContentHashModel):
         ]
 
     def calculate_content_hash(self):
+        """Вычисляет хеш полезной нагрузки снимка."""
         return template_revision_content_hash(
             code=self.code,
             title=self.title,

@@ -75,6 +75,7 @@ class TemplateEntity(models.Model):
     )
 
     class Meta:
+        """Описание полей и поведения записи."""
         managed = True
         db_table = '"documents"."template_entities"'
 

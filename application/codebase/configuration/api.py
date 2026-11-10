@@ -47,6 +47,7 @@ logger = getLogger(__name__)
 
 API_APPLICATIONS = (
     "messages",
+    "documents",
 )
 
 

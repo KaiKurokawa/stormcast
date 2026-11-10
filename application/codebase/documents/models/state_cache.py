@@ -41,7 +41,6 @@ class StateCache(models.Model):
         primary_key=True,
         on_delete=models.CASCADE,
         db_column="entity_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="state_cache",
@@ -54,7 +53,6 @@ class StateCache(models.Model):
         "stormcast_documents.Revision",
         on_delete=models.RESTRICT,
         db_column="revision_id",
-        db_constraint=False,
         db_index=False,
         null=True,
         blank=True,
@@ -84,6 +82,7 @@ class StateCache(models.Model):
     )
 
     readiness_stage = PostgreSQLEnumField(
+        default=ReadinessStage.DRAFT,
         enum_type='"documents"."readiness_stages"',
         max_length=50,
         choices=ReadinessStage.choices,
@@ -100,6 +99,7 @@ class StateCache(models.Model):
     )
 
     is_archived = models.BooleanField(
+        default=False,
         db_default=False,
         null=False,
 
@@ -111,6 +111,7 @@ class StateCache(models.Model):
     )
 
     is_deleted = models.BooleanField(
+        default=False,
         db_default=False,
         null=False,
 
@@ -136,6 +137,7 @@ class StateCache(models.Model):
     )
 
     details = models.JSONField(
+        default=dict,
         null=False,
 
         db_default=RawSQL(
@@ -169,6 +171,7 @@ class StateCache(models.Model):
     )
 
     class Meta:
+        """Описание полей и поведения записи."""
         managed = True
 
         db_table = '"documents"."state_cache"'
@@ -184,7 +187,7 @@ class StateCache(models.Model):
         constraints = [
 
             content_hash_length_constraint(
-                name="check_state_cache_content_hash_length",
+                name="check_documents_state_cache_content_hash_length",
 
                 violation_error_message=(
                     "Проверяет, что хеш снимка состояния "

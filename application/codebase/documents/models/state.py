@@ -65,7 +65,6 @@ class State(ContentHashModel):
         "stormcast_documents.DocumentEntity",
         on_delete=models.CASCADE,
         db_column="entity_id",
-        db_constraint=False,
         db_index=False,
         null=False,
         related_name="states",
@@ -78,7 +77,6 @@ class State(ContentHashModel):
         "stormcast_documents.Revision",
         on_delete=models.RESTRICT,
         db_column="revision_id",
-        db_constraint=False,
         db_index=False,
         null=True,
         blank=True,
@@ -108,6 +106,7 @@ class State(ContentHashModel):
     )
 
     readiness_stage = PostgreSQLEnumField(
+        default=ReadinessStage.DRAFT,
         enum_type='"documents"."readiness_stages"',
         max_length=50,
         choices=ReadinessStage.choices,
@@ -127,6 +126,7 @@ class State(ContentHashModel):
     )
 
     is_archived = models.BooleanField(
+        default=False,
         db_default=False,
         null=False,
 
@@ -138,6 +138,7 @@ class State(ContentHashModel):
     )
 
     is_deleted = models.BooleanField(
+        default=False,
         db_default=False,
         null=False,
 
@@ -163,6 +164,7 @@ class State(ContentHashModel):
     )
 
     details = models.JSONField(
+        default=dict,
         null=False,
 
         db_default=RawSQL(
@@ -193,6 +195,7 @@ class State(ContentHashModel):
     )
 
     class Meta:
+        """Описание полей и поведения записи."""
         managed = True
         db_table = '"documents"."states"'
 
@@ -207,7 +210,7 @@ class State(ContentHashModel):
         constraints = [
 
             content_hash_length_constraint(
-                name="check_states_content_hash_length",
+                name="check_documents_states_content_hash_length",
 
                 violation_error_message=(
                     "Проверяет, что хеш снимка состояния "
@@ -238,6 +241,7 @@ class State(ContentHashModel):
         ]
 
     def calculate_content_hash(self):
+        """Вычисляет хеш полезной нагрузки снимка."""
         return state_content_hash(
             readiness_stage=self.readiness_stage,
             is_archived=self.is_archived,

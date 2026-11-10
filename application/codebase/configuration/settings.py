@@ -117,6 +117,8 @@ INSTALLED_APPS = [
     # Приложение, доступное в тестовом срезе проекта
     # ---------------------------------------------------------------------
     "messages.apps.MessagesConfig",
+    "documents.apps.DocumentsConfig",
+    "common.apps.CommonConfig",
 ]
 
 
